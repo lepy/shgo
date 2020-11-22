@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 import copy
 
 try:
@@ -85,11 +85,11 @@ except ImportError:  # Python 2:
                     except KeyError:
                         pass
                 # Call the function and store the data in the cache (call it
-                # with the caller in case it's an instance function
-                # - Ternary condition):
-                cur_caller_cache_dict[key] = self._input_func(caller, *args,
-                                                              **kwargs) if caller is not None else self._input_func(
-                    *args, **kwargs)
+                # with the caller in case it's an instance function)
+                if caller is not None:
+                    args = (caller,) + args
+                cur_caller_cache_dict[key] = self._input_func(*args, **kwargs)
+
                 return cur_caller_cache_dict[key]
 
         # Return the decorator wrapping the class (also wraps the instance to
@@ -122,7 +122,6 @@ class Complex:
 
         # TODO: Assign functions to a the complex instead
         if symmetry:
-            pass
             self.generation_cycle = 1
             # self.centroid = self.C0()[-1].x
             # self.C0.centroid = self.centroid
@@ -150,28 +149,28 @@ class Complex:
         Generate the simplicial triangulation of the n dimensional hypercube
         containing 2**n vertices
         """
-        import numpy
-        origin = list(numpy.zeros(dim, dtype=int))
+        origin = list(np.zeros(dim, dtype=int))
         self.origin = origin
-        supremum = list(numpy.ones(dim, dtype=int))
-        self.suprenum = supremum
+        supremum = list(np.ones(dim, dtype=int))
+        self.supremum = supremum
 
-        x_parents = []
-        x_parents.append(tuple(self.origin))
+        # tuple versions for indexing
+        origintuple = tuple(origin)
+        supremumtuple = tuple(supremum)
+
+        x_parents = [origintuple]
 
         if symmetry:
-            # self.C0 = Cell(0, 0, 0, self.origin, self.suprenum)
-            self.C0 = Simplex(0, 0, 0, 0, self.dim)  # Initial cell object
-            self.C0.add_vertex(self.V[tuple(origin)])
+            self.C0 = Simplex(0, 0, 0, self.dim)  # Initial cell object
+            self.C0.add_vertex(self.V[origintuple])
 
             i_s = 0
             self.perm_symmetry(i_s, x_parents, origin)
-            self.C0.add_vertex(self.V[tuple(supremum)])
+            self.C0.add_vertex(self.V[supremumtuple])
         else:
-            self.C0 = Cell(0, 0, 0, self.origin,
-                           self.suprenum)  # Initial cell object
-            self.C0.add_vertex(self.V[tuple(origin)])
-            self.C0.add_vertex(self.V[tuple(supremum)])
+            self.C0 = Cell(0, 0, origin, supremum)  # Initial cell object
+            self.C0.add_vertex(self.V[origintuple])
+            self.C0.add_vertex(self.V[supremumtuple])
 
             i_parents = []
             self.perm(i_parents, x_parents, origin)
@@ -179,15 +178,7 @@ class Complex:
         if printout:
             print("Initial hyper cube:")
             for v in self.C0():
-                print(self.C0())
-                print("Vertex: {}".format(v.x))
-                print("v.f: {}".format(v.f))
-                constr = 'Connections: '
-                for vc in v.nn:
-                    constr += '{} '.format(vc.x)
-
-                print(constr)
-                print('Order = {}'.format(v.order))
+                v.print_out()
 
     def perm(self, i_parents, x_parents, xi):
         # TODO: Cut out of for if outside linear constraint cutting planes
@@ -246,24 +237,15 @@ class Complex:
         self.perm_symmetry(i_s, x_parents2, xi2)
 
     def add_centroid(self):
-        """Split the central edge between the origin and suprenum of
+        """Split the central edge between the origin and supremum of
         a cell and add the new vertex to the complex"""
         self.centroid = list(
-            (numpy.array(self.origin) + numpy.array(self.suprenum)) / 2.0)
+            (np.array(self.origin) + np.array(self.supremum)) / 2.0)
         self.C0.add_vertex(self.V[tuple(self.centroid)])
         self.C0.centroid = self.centroid
 
-        if 0:  # Constrained centroid
-            v_sum = 0
-            for v in self.C0():
-                v_sum += numpy.array(v.x)
-
-            self.centroid = list(v_sum / len(self.C0()))
-            self.C0.add_vertex(self.V[tuple(self.centroid)])
-            self.C0.centroid = self.centroid
-
-        # Disconnect origin and suprenum
-        self.V[tuple(self.origin)].disconnect(self.V[tuple(self.suprenum)])
+        # Disconnect origin and supremum
+        self.V[tuple(self.origin)].disconnect(self.V[tuple(self.supremum)])
 
         # Connect centroid to all other vertices
         for v in self.C0():
@@ -275,16 +257,15 @@ class Complex:
     # Construct incidence array:
     def incidence(self):
         if self.centroid_added:
-            self.structure = numpy.zeros([2 ** self.dim + 1, 2 ** self.dim + 1],
+            self.structure = np.zeros([2 ** self.dim + 1, 2 ** self.dim + 1],
                                          dtype=int)
         else:
-            self.structure = numpy.zeros([2 ** self.dim, 2 ** self.dim],
+            self.structure = np.zeros([2 ** self.dim, 2 ** self.dim],
                                          dtype=int)
 
         for v in self.HC.C0():
             for v2 in v.nn:
-                # self.structure[0, 15] = 1
-                self.structure[v.Ind, v2.Ind] = 1
+                self.structure[v.index, v2.index] = 1
 
         return
 
@@ -294,13 +275,13 @@ class Complex:
         incidence, each list element contains a list of indexes
         corresponding to that entries neighbours"""
 
-        self.graph = [[v2.Ind for v2 in v.nn] for v in self.C0()]
+        self.graph = [[v2.index for v2 in v.nn] for v in self.C0()]
 
     # Graph structure method:
     # 0. Capture the indices of the initial cell.
-    # 1. Generate new origin and suprenum scalars based on current generation
+    # 1. Generate new origin and supremum scalars based on current generation
     # 2. Generate a new set of vertices corresponding to a new
-    #    "origin" and "suprenum"
+    #    "origin" and "supremum"
     # 3. Connected based on the indices of the previous graph structure
     # 4. Disconnect the edges in the original cell
 
@@ -316,14 +297,13 @@ class Complex:
         except IndexError:
             self.H.append([])
 
-        # Generate subcubes using every extreme vertex in C_i as a suprenum
+        # Generate subcubes using every extreme vertex in C_i as a supremum
         # and the centroid of C_i as the origin
         H_new = []  # list storing all the new cubes split from C_i
         for i, v in enumerate(C_i()[:-1]):
-            suprenum = tuple(v.x)
+            supremum = tuple(v.x)
             H_new.append(
-                self.construct_hypercube(origin_new, suprenum,
-                                         gen, C_i.hg_n, C_i.p_hgr_h))
+                self.construct_hypercube(origin_new, supremum, gen, C_i.hg_n))
 
         for i, connections in enumerate(self.graph):
             # Present vertex V_new[i]; connect to all connections:
@@ -335,7 +315,7 @@ class Complex:
 
         # Destroy the old cell
         if C_i is not self.C0:  # Garbage collector does this anyway; not needed
-            del (C_i)
+            del C_i
 
         # TODO: Recalculate all the homology group ranks of each cell
         return H_new
@@ -359,7 +339,7 @@ class Complex:
         return no_splits  # USED IN SHGO
 
     # @lru_cache(maxsize=None)
-    def construct_hypercube(self, origin, suprenum, gen, hgr, p_hgr_h,
+    def construct_hypercube(self, origin, supremum, gen, hgr,
                             printout=False):
         """
         Build a hypercube with triangulations symmetric to C0.
@@ -367,25 +347,23 @@ class Complex:
         Parameters
         ----------
         origin : vec
-        suprenum : vec (tuple)
+        supremum : vec (tuple)
         gen : generation
         hgr : parent homology group rank
         """
 
         # Initiate new cell
-        C_new = Cell(gen, hgr, p_hgr_h, origin, suprenum)
+        C_new = Cell(gen, hgr, origin, supremum)
         C_new.centroid = tuple(
-            (numpy.array(origin) + numpy.array(suprenum)) / 2.0)
-        # C_new.centroid =
+            (np.array(origin) + np.array(supremum)) / 2.0)
 
-        # centroid_index = len(self.C0()) - 1
         # Build new indexed vertex list
         V_new = []
 
         # Cached calculation
         for i, v in enumerate(self.C0()[:-1]):
             t1 = self.generate_sub_cell_t1(origin, v.x)
-            t2 = self.generate_sub_cell_t2(suprenum, v.x)
+            t2 = self.generate_sub_cell_t2(supremum, v.x)
 
             vec = t1 + t2
 
@@ -406,15 +384,9 @@ class Complex:
         if printout:
             print("A sub hyper cube with:")
             print("origin: {}".format(origin))
-            print("suprenum: {}".format(suprenum))
+            print("supremum: {}".format(supremum))
             for v in C_new():
-                print("Vertex: {}".format(v.x))
-                constr = 'Connections: '
-                for vc in v.nn:
-                    constr += '{} '.format(vc.x)
-
-                print(constr)
-                print('Order = {}'.format(v.order))
+                v.print_out()
 
         # Append the new cell to the to complex
         self.H[gen].append(C_new)
@@ -423,7 +395,7 @@ class Complex:
 
     def split_simplex_symmetry(self, S, gen):
         """
-        Split a hypersimplex S into two sub simplcies by building a hyperplane
+        Split a hypersimplex S into two sub simplices by building a hyperplane
         which connects to a new vertex on an edge (the longest edge in
         dim = {2, 3}) and every other vertex in the simplex that is not
         connected to the edge being split.
@@ -440,63 +412,55 @@ class Complex:
             self.H[gen]
         except IndexError:
             self.H.append([])
-        # gen, hgr, p_hgr_h,
-        # gen, C_i.hg_n, C_i.p_hgr_h
 
         # Find new vertex.
-        # V_new_x = tuple((numpy.array(C()[0].x) + numpy.array(C()[1].x)) / 2.0)
-        V_new = self.V[
-            tuple((numpy.array(S()[0].x) + numpy.array(S()[-1].x)) / 2.0)]
+        # V_new_x = tuple((np.array(C()[0].x) + np.array(C()[1].x)) / 2.0)
+        s = S()
+        firstx = s[0].x
+        lastx = s[-1].x
+        V_new = self.V[tuple((np.array(firstx) + np.array(lastx)) / 2.0)]
 
         # Disconnect old longest edge
-        self.V[S()[0].x].disconnect(self.V[S()[-1].x])
+        self.V[firstx].disconnect(self.V[lastx])
 
         # Connect new vertices to all other vertices
-        for v in S()[:]:
+        for v in s[:]:
             v.connect(self.V[V_new.x])
 
         # New "lower" simplex
-        S_new_l = Simplex(gen, S.hg_n, S.p_hgr_h, self.generation_cycle,
+        S_new_l = Simplex(gen, S.hg_n, self.generation_cycle,
                           self.dim)
-        S_new_l.add_vertex(S()[0])
+        S_new_l.add_vertex(s[0])
         S_new_l.add_vertex(V_new)  # Add new vertex
-        for v in S()[1:-1]:  # Add all other vertices
+        for v in s[1:-1]:  # Add all other vertices
             S_new_l.add_vertex(v)
 
         # New "upper" simplex
-        S_new_u = Simplex(gen, S.hg_n, S.p_hgr_h, S.generation_cycle, self.dim)
-        S_new_u.add_vertex(
-            S()[S_new_u.generation_cycle + 1])  # First vertex on new long edge
+        S_new_u = Simplex(gen, S.hg_n, S.generation_cycle, self.dim)
 
-        for v in S()[1:-1]:  # Remaining vertices
+        # First vertex on new long edge
+        S_new_u.add_vertex(s[S_new_u.generation_cycle + 1])
+
+        for v in s[1:-1]:  # Remaining vertices
             S_new_u.add_vertex(v)
 
-        for k, v in enumerate(S()[1:-1]):  # iterate through inner vertices
-            # for easier k / gci tracking
-            k += 1
-            # if k == 0:
-            #    continue  # We do this rather than S[1:-1]
-            # for easier k / gci tracking
-            if k == (S.generation_cycle + 1):
+        for k, v in enumerate(s[1:-1]):  # iterate through inner vertices
+            if k == S.generation_cycle:
                 S_new_u.add_vertex(V_new)
             else:
                 S_new_u.add_vertex(v)
 
-        S_new_u.add_vertex(S()[-1])  # Second vertex on new long edge
-
-        # for i, v in enumerate(S_new_u()):
-        #    print(f'S_new_u()[{i}].x = {v.x}')
+        S_new_u.add_vertex(s[-1])  # Second vertex on new long edge
 
         self.H[gen].append(S_new_l)
-        if 1:
-            self.H[gen].append(S_new_u)
+        self.H[gen].append(S_new_u)
 
         return
 
     @lru_cache(maxsize=None)
-    def generate_sub_cell_2(self, origin, suprenum, v_x_t):  # No hits
+    def generate_sub_cell_2(self, origin, supremum, v_x_t):  # No hits
         """
-        Use the origin and suprenum vectors to find a new cell in that
+        Use the origin and supremum vectors to find a new cell in that
         subspace direction
 
         NOTE: NOT CURRENTLY IN USE!
@@ -504,27 +468,27 @@ class Complex:
         Parameters
         ----------
         origin : tuple vector (hashable)
-        suprenum : tuple vector (hashable)
+        supremum : tuple vector (hashable)
 
         Returns
         -------
 
         """
         t1 = self.generate_sub_cell_t1(origin, v_x_t)
-        t2 = self.generate_sub_cell_t2(suprenum, v_x_t)
+        t2 = self.generate_sub_cell_t2(supremum, v_x_t)
         vec = t1 + t2
         return tuple(vec)
 
     @lru_cache(maxsize=None)
     def generate_sub_cell_t1(self, origin, v_x):
         # TODO: Calc these arrays outside
-        v_o = numpy.array(origin)
-        return v_o - v_o * numpy.array(v_x)
+        v_o = np.array(origin)
+        return v_o - v_o * np.array(v_x)
 
     @lru_cache(maxsize=None)
-    def generate_sub_cell_t2(self, suprenum, v_x):
-        v_s = numpy.array(suprenum)
-        return v_s * numpy.array(v_x)
+    def generate_sub_cell_t2(self, supremum, v_x):
+        v_s = np.array(supremum)
+        return v_s * np.array(v_x)
 
     # Plots
     def plot_complex(self):
@@ -541,9 +505,9 @@ class Complex:
                 for c in C:
                     for v in c():
                         if self.bounds is None:
-                            x_a = numpy.array(v.x, dtype=float)
+                            x_a = np.array(v.x, dtype=float)
                         else:
-                            x_a = numpy.array(v.x, dtype=float)
+                            x_a = np.array(v.x, dtype=float)
                             for i in range(len(self.bounds)):
                                 x_a[i] = (x_a[i] * (self.bounds[i][1]
                                                     - self.bounds[i][0])
@@ -557,9 +521,9 @@ class Complex:
                         ylines = []
                         for vn in v.nn:
                             if self.bounds is None:
-                                xn_a = numpy.array(vn.x, dtype=float)
+                                xn_a = np.array(vn.x, dtype=float)
                             else:
-                                xn_a = numpy.array(vn.x, dtype=float)
+                                xn_a = np.array(vn.x, dtype=float)
                                 for i in range(len(self.bounds)):
                                     xn_a[i] = (xn_a[i] * (self.bounds[i][1]
                                                           - self.bounds[i][0])
@@ -586,7 +550,6 @@ class Complex:
             pyplot.show()
 
         elif self.dim == 3:
-            from mpl_toolkits.mplot3d import Axes3D
             fig = pyplot.figure()
             ax = fig.add_subplot(111, projection='3d')
 
@@ -617,15 +580,10 @@ class Complex:
         return
 
 
-class Cell:
-    """
-    Contains a cell that is symmetric to the initial hypercube triangulation
-    """
-
-    def __init__(self, p_gen, p_hgr, p_hgr_h, origin, suprenum):
+class VertexGroup(object):
+    def __init__(self, p_gen, p_hgr):
         self.p_gen = p_gen  # parent generation
         self.p_hgr = p_hgr  # parent homology group rank
-        self.p_hgr_h = p_hgr_h  #
         self.hg_n = None
         self.hg_d = None
 
@@ -633,10 +591,6 @@ class Cell:
         # This is the sum off all previously split cells
         # cumulatively throughout its entire history
         self.C = []
-        self.origin = origin
-        self.suprenum = suprenum
-        self.centroid = None  # (Not always used)
-        # TODO: self.bounds
 
     def __call__(self):
         return self.C
@@ -649,27 +603,20 @@ class Cell:
         """
         Returns the homology group order of the current cell
         """
-        if self.hg_n is not None:
-            return self.hg_n
-        else:
-            hg_n = 0
-            for v in self.C:
-                if v.minimiser():
-                    hg_n += 1
+        if self.hg_n is None:
+            self.hg_n = sum(1 for v in self.C if v.minimiser())
 
-            self.hg_n = hg_n
-            return hg_n
+        return self.hg_n
 
     def homology_group_differential(self):
         """
         Returns the difference between the current homology group of the
         cell and it's parent group
         """
-        if self.hg_d is not None:
-            return self.hg_d
-        else:
+        if self.hg_d is None:
             self.hgd = self.hg_n - self.p_hgr
-            return self.hgd
+
+        return self.hgd
 
     def polytopial_sperner_lemma(self):
         """
@@ -683,122 +630,59 @@ class Cell:
         Print the current cell to console
         """
         for v in self():
-            print("Vertex: {}".format(v.x))
-            constr = 'Connections: '
-            for vc in v.nn:
-                constr += '{} '.format(vc.x)
-
-            print(constr)
-            print('Order = {}'.format(v.order))
+            v.print_out()
 
 
-class Simplex:
+class Cell(VertexGroup):
+    """
+    Contains a cell that is symmetric to the initial hypercube triangulation
+    """
+
+    def __init__(self, p_gen, p_hgr, origin, supremum):
+        super(Cell, self).__init__(p_gen, p_hgr)
+
+        self.origin = origin
+        self.supremum = supremum
+        self.centroid = None  # (Not always used)
+        # TODO: self.bounds
+
+
+class Simplex(VertexGroup):
     """
     Contains a simplex that is symmetric to the initial symmetry constrained
     hypersimplex triangulation
     """
 
-    def __init__(self, p_gen, p_hgr, p_hgr_h, generation_cycle, dim):
-        self.p_gen = p_gen  # parent generation
-        self.p_hgr = p_hgr  # parent homology group rank
-        self.p_hgr_h = p_hgr_h  #
-        self.hg_n = None
-        self.hg_d = None
+    def __init__(self, p_gen, p_hgr, generation_cycle, dim):
+        super(Simplex, self).__init__(p_gen, p_hgr)
 
-        gci_n = (generation_cycle + 1) % (dim - 1)
-        gci = gci_n
-        self.generation_cycle = gci
-
-        # Maybe add parent homology group rank total history
-        # This is the sum off all previously split cells
-        # cumulatively throughout its entire history
-        self.C = []
-
-    def __call__(self):
-        return self.C
-
-    def add_vertex(self, V):
-        if V not in self.C:
-            self.C.append(V)
-
-    def homology_group_rank(self):
-        """
-        Returns the homology group order of the current cell
-        """
-        if self.hg_n is not None:
-            return self.hg_n
-        else:
-            hg_n = 0
-            for v in self.C:
-                if v.minimiser():
-                    hg_n += 1
-
-            self.hg_n = hg_n
-            return hg_n
-
-    def homology_group_differential(self):
-        """
-        Returns the difference between the current homology group of the
-        cell and it's parent group
-        """
-        if self.hg_d is not None:
-            return self.hg_d
-        else:
-            self.hgd = self.hg_n - self.p_hgr
-            return self.hgd
-
-    def polytopial_sperner_lemma(self):
-        """
-        Returns the number of stationary points theoretically contained in the
-        cell based information currently known about the cell
-        """
-        pass
-
-    def print_out(self):
-        """
-        Print the current cell to console
-        """
-        for v in self():
-            print("Vertex: {}".format(v.x))
-            constr = 'Connections: '
-            for vc in v.nn:
-                constr += '{} '.format(vc.x)
-
-            print(constr)
-            print('Order = {}'.format(v.order))
+        self.generation_cycle = (generation_cycle + 1) % (dim - 1)
 
 
 class Vertex:
     def __init__(self, x, bounds=None, func=None, func_args=(), g_cons=None,
-                 g_cons_args=(), nn=None, Ind=None):
-        import numpy
+                 g_cons_args=(), nn=None, index=None):
         self.x = x
         self.order = sum(x)
-        if bounds is None:
-            x_a = numpy.array(x, dtype=float)
-        else:
-            x_a = numpy.array(x, dtype=float)
-            for i in range(len(bounds)):
-                x_a[i] = (x_a[i] * (bounds[i][1] - bounds[i][0])
-                          + bounds[i][0])
+        x_a = np.array(x, dtype=float)
+        if bounds is not None:
+            for i, (lb, ub) in enumerate(bounds):
+                x_a[i] = x_a[i] * (ub - lb) + lb
 
-                # print(f'x = {x}; x_a = {x_a}')
         # TODO: Make saving the array structure optional
         self.x_a = x_a
 
-        # Note Vertex is only initiate once for all x so only
+        # Note Vertex is only initiated once for all x so only
         # evaluated once
         if func is not None:
+            self.feasible = True
             if g_cons is not None:
-                self.feasible = True
-                for ind, g in enumerate(g_cons):
-                    if g(self.x_a, *g_cons_args[ind]) < 0.0:
-                        self.f = numpy.inf
+                for g, args in zip(g_cons, g_cons_args):
+                    if g(self.x_a, *args) < 0.0:
+                        self.f = np.inf
                         self.feasible = False
-                if self.feasible:
-                    self.f = func(x_a, *func_args)
-
-            else:
+                        break
+            if self.feasible:
                 self.f = func(x_a, *func_args)
 
         if nn is not None:
@@ -810,11 +694,10 @@ class Vertex:
         self.check_min = True
 
         # Index:
-        if Ind is not None:
-            self.Ind = Ind
+        if index is not None:
+            self.index = index
 
     def __hash__(self):
-        # return hash(tuple(self.x))
         return hash(self.x)
 
     def connect(self, v):
@@ -822,12 +705,8 @@ class Vertex:
             self.nn.add(v)
             v.nn.add(self)
 
-            # self.min = self.minimiser()
             if self.minimiser():
-                # if self.f > v.f:
-                #    self.min = False
-                # else:
-                v.min = False
+                v._min = False
                 v.check_min = False
 
             # TEMPORARY
@@ -842,23 +721,21 @@ class Vertex:
             v.check_min = True
 
     def minimiser(self):
-        # NOTE: This works pretty well, never call self.min,
-        #       call this function instead
+        """Check whether this vertex is strictly less than all its neighbours"""
         if self.check_min:
-            # Check if the current vertex is a minimiser
-            # self.min = all(self.f <= v.f for v in self.nn)
-            self.min = True
-            for v in self.nn:
-                # if self.f <= v.f:
-                # if self.f > v.f: #TODO: LAST STABLE
-                if self.f >= v.f:  # TODO: AttributeError: 'Vertex' object has no attribute 'f'
-                    # if self.f >= v.f:
-                    self.min = False
-                    break
-
+            self._min = all(self.f < v.f for v in self.nn)
             self.check_min = False
 
-        return self.min
+        return self._min
+
+    def print_out(self):
+        print("Vertex: {}".format(self.x))
+        constr = 'Connections: '
+        for vc in self.nn:
+            constr += '{} '.format(vc.x)
+
+        print(constr)
+        print('Order = {}'.format(self.order))
 
 
 class VertexCache:
@@ -866,7 +743,6 @@ class VertexCache:
                  g_cons_args=(), indexed=True):
 
         self.cache = {}
-        # self.cache = set()
         self.func = func
         self.g_cons = g_cons
         self.g_cons_args = g_cons_args
@@ -876,19 +752,19 @@ class VertexCache:
         self.size = 0
 
         if indexed:
-            self.Index = -1
+            self.index = -1
 
     def __getitem__(self, x, indexed=True):
         try:
             return self.cache[x]
         except KeyError:
             if indexed:
-                self.Index += 1
+                self.index += 1
                 xval = Vertex(x, bounds=self.bounds,
                               func=self.func, func_args=self.func_args,
                               g_cons=self.g_cons,
                               g_cons_args=self.g_cons_args,
-                              Ind=self.Index)
+                              index=self.index)
             else:
                 xval = Vertex(x, bounds=self.bounds,
                               func=self.func, func_args=self.func_args,
@@ -902,7 +778,6 @@ class VertexCache:
             # TODO: Check
             if self.func is not None:
                 if self.g_cons is not None:
-                    # print(f'xval.feasible = {xval.feasible}')
                     if xval.feasible:
                         self.nfev += 1
                         self.size += 1

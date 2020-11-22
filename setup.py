@@ -1,19 +1,21 @@
 from setuptools import setup, find_packages
 
+
 # Get the long description from the README file
 def readme():
     with open('README.rst') as f:
         return f.read()
 
+
 setup(name='shgo',
-      version='0.4.3',
+      version='0.4.8',
       description='Simplicial homology global optimisation',
       url='https://github.com/stefan-endres/shgo',
       author='Stefan Endres, Carl Sandrock',
       author_email='stefan.c.endres@gmail.com',
       license='MIT',
-      packages=['shgo', 'shgo.shgo_m', 'shgo.tests'],
-      package_data={'shgo.shgo_m': ['sobol_vec.gz']},
+      packages=['shgo', 'shgo._shgo_lib', 'shgo.tests'],
+      package_data={'shgo._shgo_lib': ['sobol_vec.gz']},
       install_requires=[
           'scipy',
           'numpy',
@@ -36,13 +38,14 @@ setup(name='shgo',
           'Topic :: Scientific/Engineering :: Mathematics',
 
           # Pick your license as you wish (should match "license" above)
-           'License :: OSI Approved :: MIT License',
+          'License :: OSI Approved :: MIT License',
 
           # Specify the Python versions you support here. In particular, ensure
           # that you indicate whether you support Python 2, Python 3 or both.
-          'Programming Language :: Python :: 2.7',
           'Programming Language :: Python :: 3.5',
           'Programming Language :: Python :: 3.6',
+          'Programming Language :: Python :: 3.7',
+          'Programming Language :: Python :: 3.8',
       ],
       test_suite='shgo.tests.test__shgo',
       zip_safe=False)
